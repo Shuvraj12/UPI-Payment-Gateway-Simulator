@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens for the "passbook" direction: a dark ink page with
+ * warm ledger-paper cards, rather than a generic light-cream or
+ * near-black+neon fintech template. See README for the reasoning.
+ */
+@theme {
+  --color-ink: #132019;
+  --color-ink-soft: #1b2b23;
+  --color-ink-text: #edeee6;
+  --color-ink-text-dim: #a9b3ac;
+
+  --color-paper: #f3f1e7;
+  --color-paper-text: #1b2620;
+  --color-paper-text-dim: #5b6a5f;
+
+  --color-credit: #3fa772;
+  --color-debit: #c1553b;
+  --color-stamp: #d1a344;
+
+  --font-display: "Space Grotesk", ui-sans-serif, sans-serif;
+  --font-body: "IBM Plex Sans", ui-sans-serif, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-ink text-ink-text font-body antialiased;
+  }
+
+  ::selection {
+    @apply bg-stamp/30 text-ink-text;
+  }
+
+  :focus-visible {
+    outline: 2px solid theme(--color-stamp);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

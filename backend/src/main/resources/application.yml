@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: upi-payment-gateway-simulator
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:upi_simulator}?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      # Convenient while the schema is still moving fast (Phases 1-3).
+      # We'll switch to Flyway-managed migrations once the core tables
+      # (Wallet, BankAccount, UpiId) stabilize around Phase 4-5.
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+    open-in-view: false
+
+server:
+  port: ${SERVER_PORT:8080}
+
+# All controllers are mounted under util.ApiPaths.BASE ("/api/v1") explicitly,
+# rather than via server.servlet.context-path, so MockMvc test paths and
+# real request paths always match exactly - no extra layer to reason about.
+
+jwt:
+  secret: ${JWT_SECRET:ChangeThisDevOnlySecretKeyBeforeAnyRealDeployment32Chars+}
+  expiration: ${JWT_EXPIRATION:900000}          # 15 minutes, in ms
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}  # 7 days, in ms
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /api-docs
+
+logging:
+  level:
+    com.upisimulator: DEBUG
+    org.springframework.security: INFO

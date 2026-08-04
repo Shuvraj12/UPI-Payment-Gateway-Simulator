@@ -1,0 +1,31 @@
+### Backend (Maven / Java) ###
+backend/target/
+*.class
+*.jar
+
+### Frontend (Node / Vite) ###
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.local
+frontend/.env
+!frontend/.env.example
+
+### IDE ###
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+.settings/
+.classpath
+.project
+*.swp
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Logs ###
+*.log
+logs/
+npm-debug.log*

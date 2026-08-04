@@ -1,0 +1,22 @@
+# Overrides src/main/resources/application.yml on the test classpath.
+# Keeps `mvn test` runnable in CI/on a fresh clone without a live MySQL instance.
+spring:
+  application:
+    name: upi-payment-gateway-simulator-test
+
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=MySQL
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    database-platform: org.hibernate.dialect.H2Dialect
+
+jwt:
+  secret: TestOnlySecretKeyUsedOnlyDuringJUnitRunsNeverInRealDeployments
+  expiration: 900000
+  refresh-expiration: 604800000
