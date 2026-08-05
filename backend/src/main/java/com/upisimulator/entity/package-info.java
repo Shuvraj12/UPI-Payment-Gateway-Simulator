@@ -1,8 +1,10 @@
 /**
  * JPA entities - persistent domain models.
  * <p>
- * Empty in Phase 1. Populated starting Phase 2 ({@code User}) and expanded
- * through Phases 4-9 ({@code Wallet}, {@code BankAccount}, {@code UpiId},
- * {@code Transaction}, {@code MoneyRequest}).
+ * {@link com.upisimulator.entity.BaseEntity} holds id + audit timestamps;
+ * every entity here extends it. Phase 2 adds {@link com.upisimulator.entity.User}
+ * and {@link com.upisimulator.entity.RefreshToken}. Expands through Phases
+ * 4-9 with {@code Wallet}, {@code BankAccount}, {@code UpiId},
+ * {@code Transaction}, {@code MoneyRequest}.
  */
 package com.upisimulator.entity;

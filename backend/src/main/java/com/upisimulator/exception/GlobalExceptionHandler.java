@@ -15,10 +15,10 @@ import java.util.stream.Collectors;
 /**
  * Central place that turns exceptions into the {@link ErrorResponse} shape
  * the frontend can rely on, instead of each controller handling its own
- * try/catch. Two handlers are here pre-emptively, ready for the DTOs that
- * arrive starting Phase 2:
+ * try/catch.
  * <ul>
- *   <li>{@link ResourceNotFoundException} - a controlled 404</li>
+ *   <li>{@link ApiException} - any of our own custom exceptions (404s, 409s,
+ *       401s, ...), each already carrying the right status</li>
  *   <li>{@link MethodArgumentNotValidException} - {@code @Valid} failures on request DTOs</li>
  * </ul>
  * plus a catch-all so an unexpected exception never leaks a stack trace to the client.
@@ -27,11 +27,10 @@ import java.util.stream.Collectors;
 @Slf4j
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleResourceNotFound(ResourceNotFoundException ex,
-                                                                  HttpServletRequest request) {
-        log.warn("Resource not found: {}", ex.getMessage());
-        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    @ExceptionHandler(ApiException.class)
+    public ResponseEntity<ErrorResponse> handleApiException(ApiException ex, HttpServletRequest request) {
+        log.warn("{}: {}", ex.getClass().getSimpleName(), ex.getMessage());
+        return build(ex.getStatus(), ex.getMessage(), request);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
