@@ -20,3 +20,7 @@ jwt:
   secret: TestOnlySecretKeyUsedOnlyDuringJUnitRunsNeverInRealDeployments
   expiration: 900000
   refresh-expiration: 604800000
+
+app:
+  upload:
+    dir: build/test-uploads

@@ -21,8 +21,17 @@ spring:
         dialect: org.hibernate.dialect.MySQLDialect
     open-in-view: false
 
+  servlet:
+    multipart:
+      max-file-size: 3MB
+      max-request-size: 3MB
+
 server:
   port: ${SERVER_PORT:8080}
+
+app:
+  upload:
+    dir: ${UPLOAD_DIR:uploads}
 
 # All controllers are mounted under util.ApiPaths.BASE ("/api/v1") explicitly,
 # rather than via server.servlet.context-path, so MockMvc test paths and

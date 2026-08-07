@@ -15,6 +15,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.Collection;
 import java.util.List;
+import java.time.LocalDateTime;
 
 /**
  * Implements {@link UserDetails} directly rather than via a separate wrapper
@@ -54,6 +55,23 @@ public class User extends BaseEntity implements UserDetails {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    @Column
+    private String profilePictureUrl;
+
+    /**
+     * Self-service soft delete (Phase 3), kept distinct from {@code enabled}
+     * (admin-controlled freeze, Phase 12) so the two reasons an account can't
+     * log in stay distinguishable in the data. Deleted rows are never
+     * removed - Wallet/Transaction rows in later phases will reference this
+     * user, and hard-deleting would either cascade-destroy financial records
+     * or leave them orphaned.
+     */
+    @Column(nullable = false)
+    private boolean deleted = false;
+
+    @Column
+    private LocalDateTime deletedAt;
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
@@ -81,7 +99,7 @@ public class User extends BaseEntity implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return enabled;
+        return enabled && !deleted;
     }
 
 }

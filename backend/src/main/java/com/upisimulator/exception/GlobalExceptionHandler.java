@@ -3,11 +3,13 @@ package com.upisimulator.exception;
 import com.upisimulator.dto.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.time.LocalDateTime;
 import java.util.stream.Collectors;
@@ -41,6 +43,27 @@ public class GlobalExceptionHandler {
                 .collect(Collectors.joining(", "));
         log.warn("Validation failed: {}", message);
         return build(HttpStatus.BAD_REQUEST, message, request);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxUploadSize(MaxUploadSizeExceededException ex,
+                                                               HttpServletRequest request) {
+        log.warn("Upload rejected, exceeded size limit: {}", request.getRequestURI());
+        return build(HttpStatus.BAD_REQUEST, "Uploaded file is too large", request);
+    }
+
+    /**
+     * Backstop for races the application's own "check, then act" logic can't
+     * fully close (e.g. two near-simultaneous create-wallet calls both
+     * passing an existsBy... check before either commits). The database's
+     * unique constraint is the real guard; this just turns its rejection
+     * into the same {@link ErrorResponse} shape instead of a raw 500.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex,
+                                                                        HttpServletRequest request) {
+        log.warn("Data integrity violation on {}: {}", request.getRequestURI(), ex.getMostSpecificCause().getMessage());
+        return build(HttpStatus.CONFLICT, "This request conflicts with existing data", request);
     }
 
     @ExceptionHandler(Exception.class)
