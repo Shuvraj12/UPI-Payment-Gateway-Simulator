@@ -12,9 +12,12 @@ export default function Header() {
 
       {isAuthenticated ? (
         <div className="flex items-center gap-4">
-          <span className="font-mono text-xs text-ink-text-dim hidden sm:inline">
+          <Link to="/wallet" className="font-mono text-xs text-ink-text-dim hover:text-ink-text">
+            Wallet
+          </Link>
+          <Link to="/profile" className="font-mono text-xs text-ink-text-dim hidden sm:inline hover:text-ink-text">
             {user?.fullName}
-          </span>
+          </Link>
           <button
             type="button"
             onClick={logout}

@@ -10,6 +10,11 @@ export const api = axios.create({
   timeout: 8000,
 })
 
+// Profile pictures (and anything else under /uploads) are served outside
+// the /api/v1 prefix - this strips the path down to scheme://host:port so
+// pages can build a full <img src> from the relative path the API returns.
+export const apiOrigin = new URL(baseURL).origin
+
 // The access token lives in AuthContext's React state, not here - this
 // module-level variable is just a sync target so the interceptor below can
 // read it without importing React. AuthContext calls setAccessToken()

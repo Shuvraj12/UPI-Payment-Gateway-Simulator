@@ -67,6 +67,15 @@ export function AuthProvider({ children }) {
     }
   }, [clearSession])
 
+  // The login/register response only carries a slim {id, fullName, email}
+  // summary. Once the Profile page fetches the fuller record (phone number,
+  // picture, ...) or saves an edit, this keeps that one shared `user` object
+  // in sync everywhere it's read (e.g. Header) instead of each page tracking
+  // its own copy.
+  const updateUser = useCallback((data) => {
+    setUser((prev) => ({ ...prev, ...data }))
+  }, [])
+
   const value = {
     user,
     accessToken,
@@ -75,6 +84,7 @@ export function AuthProvider({ children }) {
     register,
     login,
     logout,
+    updateUser,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

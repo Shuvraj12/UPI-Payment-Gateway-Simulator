@@ -1,6 +1,6 @@
 const UPCOMING = [
-  { phase: '03', label: 'User profile', detail: 'edit profile, change password' },
-  { phase: '04', label: 'Wallets', detail: 'balance, ledger, freeze' },
+  { phase: '05', label: 'Bank accounts', detail: 'add, verify, primary account' },
+  { phase: '06', label: 'UPI IDs', detail: 'create, set default' },
   { phase: '07', label: 'Transfers', detail: 'send, receive, status' },
   { phase: '08', label: 'QR payments', detail: 'generate, scan, pay' },
   { phase: '09', label: 'Money requests', detail: 'create, accept, reject' },
