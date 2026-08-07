@@ -2,7 +2,7 @@
 
 A simulated UPI-style payments backend and frontend, built phase by phase as a portfolio project. Every transfer, wallet, and request is internal — this does not integrate with any real payment network.
 
-**Status:** Phase 2 of 14 complete.
+**Status:** Phase 4 of 14 complete.
 
 ## Tech stack
 
@@ -23,6 +23,12 @@ Spring Boot 3.5 reached end-of-life on 2026-06-30; 3.5.16 is the final patch. Sp
 
 The access token stays in memory only (React state), but the refresh token is persisted to `localStorage` so a page refresh doesn't force a re-login. That's simpler to build than the alternative, but it means an XSS vulnerability could steal a refresh token — `localStorage` is readable by any script on the page. A production system would put the refresh token in an `httpOnly` cookie instead (unreadable from JS, but requires the backend to set `Set-Cookie`, handle CSRF, and adjust CORS to send credentials). Flagging this as a known, deliberate simplification rather than an oversight — worth hardening if this project ever needs to look production-ready specifically from a security-review angle.
 
+### Why two different locking strategies on `Wallet`
+
+Balance mutations (deposit now; transfer/refund from Phase 7) go through a `SELECT ... FOR UPDATE` pessimistic lock (`WalletRepository.findByUserIdForUpdate`) — a competing write on the same wallet waits rather than racing, which is the right failure mode when losing or double-applying money is unacceptable. Everything else on `Wallet` (freeze/unfreeze) relies on a plain `@Version` optimistic-locking column instead — lower-contention, and "retry on conflict" is a fine outcome there, so paying for a DB lock would be overkill. `WalletConcurrencyIntegrationTest` fires ten real concurrent deposits at one wallet and asserts the balance is exactly their sum — without the lock this is flaky-to-failing; with it, it's reliable.
+
+One thing to carry into Phase 7: a transfer will need to lock two wallets (sender + receiver) in one transaction. Locking them in a consistent order (e.g. ascending wallet id) is what avoids two simultaneous transfers deadlocking on each other — noted in `Wallet`'s Javadoc now so it isn't rediscovered the hard way later.
+
 ## Repository layout
 
 ```
@@ -36,17 +42,17 @@ upi-payment-gateway-simulator/
 
 ```
 backend/src/main/java/com/upisimulator/
-├── config/         OpenApiConfig, JpaAuditingConfig
-├── controller/      HomeController, AuthController
-├── dto/             ApiResponse<T>, ErrorResponse, Register/Login/Refresh requests, AuthResponse
-├── entity/          BaseEntity, User, Role, RefreshToken
-├── exception/       ApiException + 4 subtypes, GlobalExceptionHandler
+├── config/         OpenApiConfig, JpaAuditingConfig, WebConfig (serves /uploads/**)
+├── controller/      HomeController, AuthController, ProfileController, WalletController
+├── dto/             ApiResponse<T>, ErrorResponse, auth DTOs, profile DTOs, wallet DTOs
+├── entity/          BaseEntity, User, Role, RefreshToken, Wallet, Transaction (+3 enums)
+├── exception/       ApiException + 5 subtypes, GlobalExceptionHandler
 ├── mapper/          Still empty — see package-info for why
-├── repository/      UserRepository, RefreshTokenRepository
+├── repository/      UserRepository, RefreshTokenRepository, WalletRepository, TransactionRepository
 ├── security/        JwtUtil, JwtProperties, SecurityConfig, JwtAuthenticationFilter,
 │                     UserDetailsServiceImpl, RestAuthenticationEntryPoint, RestAccessDeniedHandler
-├── service/         AuthService (+ impl/AuthServiceImpl)
-└── util/            ApiPaths
+├── service/         AuthService, ProfileService, FileStorageService, WalletService (+ impl/)
+└── util/            ApiPaths, UtrGenerator
 ```
 
 Packages with no classes yet still exist as `package-info.java` files, so the intended architecture is visible in the repo from Phase 1 onward rather than materializing folder-by-folder.
@@ -55,10 +61,11 @@ Packages with no classes yet still exist as `package-info.java` files, so the in
 
 ```
 frontend/src/
-├── components/    Header (auth-aware), LedgerEntry (live health check), RoadmapList
+├── components/    Header (auth-aware), ProtectedRoute, LedgerEntry, RoadmapList, TransactionRow
 ├── context/       AuthContext — session state, restores from stored refresh token on load
-├── pages/         Home, Login, Register, NotFound
-├── services/      api.js (axios instance + token interceptor), authService.js, healthService.js
+├── pages/         Home, Login, Register, Profile, Wallet, NotFound
+├── services/      api.js (axios instance + token interceptor + apiOrigin),
+│                   authService.js, profileService.js, walletService.js, healthService.js
 ├── App.jsx        Route definitions, wraps everything in AuthProvider
 ├── main.jsx       Entry point (wraps App in BrowserRouter)
 └── index.css      Tailwind v4 import + design tokens
@@ -117,6 +124,7 @@ Opens on `http://localhost:5173`. Copy `.env.example` to `.env` if your backend 
 | `JWT_SECRET` | backend | dev placeholder | HMAC signing key — regenerate before any real deployment |
 | `JWT_EXPIRATION` | backend | `900000` (15 min) | Access token lifetime, ms |
 | `JWT_REFRESH_EXPIRATION` | backend | `604800000` (7 days) | Refresh token lifetime, ms |
+| `UPLOAD_DIR` | backend | `uploads` | Where profile pictures are written on disk |
 | `VITE_API_BASE_URL` | frontend | `http://localhost:8080/api/v1` | Backend base URL |
 
 ## API endpoints
@@ -128,6 +136,17 @@ Opens on `http://localhost:5173`. Copy `.env.example` to `.env` if your backend 
 | POST | `/api/v1/auth/login` | Public | Authenticate with email + password — returns a new token pair |
 | POST | `/api/v1/auth/refresh` | Public* | Exchange a refresh token for a new access token. Rotates the refresh token — the old one is revoked and cannot be reused |
 | POST | `/api/v1/auth/logout` | Public* | Revoke a refresh token |
+| GET | `/api/v1/profile` | Bearer | Get the caller's own profile |
+| PUT | `/api/v1/profile` | Bearer | Update full name + phone number (email is immutable here) |
+| PUT | `/api/v1/profile/password` | Bearer | Change password — revokes every other active session |
+| POST | `/api/v1/profile/picture` | Bearer | Upload a profile picture, `multipart/form-data`, JPEG/PNG up to 2MB |
+| DELETE | `/api/v1/profile` | Bearer | Soft-delete the account — requires the current password in the body |
+| POST | `/api/v1/wallet` | Bearer | Create a wallet (once per account) |
+| GET | `/api/v1/wallet` | Bearer | Get balance and freeze status |
+| POST | `/api/v1/wallet/deposit` | Bearer | Simulated deposit — capped at ₹1,00,000/request, not a real payment rail |
+| PUT | `/api/v1/wallet/freeze` | Bearer | Freeze your own wallet (blocks deposits; will block transfers from Phase 7) |
+| PUT | `/api/v1/wallet/unfreeze` | Bearer | Unfreeze your own wallet |
+| GET | `/api/v1/wallet/transactions` | Bearer | Paginated ledger (`?page=&size=&sort=`) — filters/search arrive Phase 10 |
 
 \* "Public" meaning no `Authorization` header is required — the refresh token in the request body is itself the credential for these two.
 
@@ -146,6 +165,9 @@ Everything else now requires `Authorization: Bearer <accessToken>`; an unauthent
 | phone_number | VARCHAR | unique, validated as a 10-digit Indian mobile number |
 | role | VARCHAR | `USER` or `ADMIN`; enum stored as a string, not an ordinal, so adding a role later doesn't renumber existing rows |
 | enabled | BOOLEAN | default `true`; Phase 12's "freeze user" will flip this |
+| profile_picture_url | VARCHAR | nullable; e.g. `/uploads/profile-pictures/<uuid>.jpg` |
+| deleted | BOOLEAN | default `false`; self-service soft delete (Phase 3) — kept distinct from `enabled` so admin-freeze and self-delete stay distinguishable |
+| deleted_at | DATETIME | nullable, set when `deleted` flips to `true` |
 | created_at / updated_at | DATETIME | via JPA auditing (`BaseEntity`) |
 
 **`refresh_tokens`** — one row per issued refresh token.
@@ -159,14 +181,41 @@ Everything else now requires `Authorization: Bearer <accessToken>`; an unauthent
 | revoked | BOOLEAN | flipped on logout, and on every successful refresh (rotation) |
 | created_at / updated_at | DATETIME | |
 
-Still on `ddl-auto=update` for now (see Phase 1 notes on migrating to Flyway once the schema stabilizes around Phase 4-5).
+**`wallets`** — one row per user (unique `user_id`).
+
+| Column | Type | Notes |
+|---|---|---|
+| id | BIGINT, PK | |
+| user_id | BIGINT, FK → users.id, unique | |
+| balance | DECIMAL(19,2) | mutated only through a pessimistic-locked lookup — see decisions above |
+| frozen | BOOLEAN | default `false`, self-service (distinct from Phase 12's admin freeze on `users.enabled`) |
+| frozen_at | DATETIME | nullable |
+| version | BIGINT | `@Version` — optimistic lock for non-balance updates (freeze/unfreeze) |
+| created_at / updated_at | DATETIME | |
+
+**`transactions`** — one row per wallet-affecting event, from that wallet's own point of view.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | BIGINT, PK | |
+| reference_number | VARCHAR(12), unique | UPI-style numeric UTR |
+| wallet_id | BIGINT, FK → wallets.id | |
+| type | VARCHAR | `DEPOSIT` today; `TRANSFER`/`QR_PAYMENT`/`REQUEST_SETTLEMENT`/`REFUND` reserved for later phases |
+| direction | VARCHAR | `CREDIT` or `DEBIT` |
+| amount | DECIMAL(19,2) | |
+| balance_after | DECIMAL(19,2) | snapshot of the wallet's balance right after this entry |
+| status | VARCHAR | `SUCCESS` today; `PENDING`/`FAILED` become reachable once transfers can fail partway |
+| description | VARCHAR | nullable |
+| created_at / updated_at | DATETIME | |
+
+Still on `ddl-auto=update` for now. With the core money-movement shape (`Wallet`/`Transaction`) now in place, Phase 5 is a reasonable point to actually switch to Flyway-managed migrations rather than keep deferring it.
 
 ## Roadmap
 
 - [x] **Phase 1** — Project setup, JWT config skeleton, basic home page
 - [x] **Phase 2** — Authentication (register, login, refresh with rotation, logout)
-- [ ] Phase 3 — User profile
-- [ ] Phase 4 — Wallet
+- [x] **Phase 3** — User profile (edit, change password, picture upload, soft delete)
+- [x] **Phase 4** — Wallet (create, balance, simulated deposit, freeze, transaction ledger)
 - [ ] Phase 5 — Bank accounts
 - [ ] Phase 6 — UPI IDs
 - [ ] Phase 7 — Money transfer
