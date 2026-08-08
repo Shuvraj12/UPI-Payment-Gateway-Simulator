@@ -2,7 +2,7 @@
 
 A simulated UPI-style payments backend and frontend, built phase by phase as a portfolio project. Every transfer, wallet, and request is internal — this does not integrate with any real payment network.
 
-**Status:** Phase 4 of 14 complete.
+**Status:** Phase 5 of 14 complete.
 
 ## Tech stack
 
@@ -29,6 +29,14 @@ Balance mutations (deposit now; transfer/refund from Phase 7) go through a `SELE
 
 One thing to carry into Phase 7: a transfer will need to lock two wallets (sender + receiver) in one transaction. Locking them in a consistent order (e.g. ascending wallet id) is what avoids two simultaneous transfers deadlocking on each other — noted in `Wallet`'s Javadoc now so it isn't rediscovered the hard way later.
 
+### Why bank accounts don't move wallet money (yet)
+
+Phase 5 only manages linked-account *records* — add, verify, set primary, delete. It doesn't wire them into `Wallet.balance` at all. Real UPI apps genuinely link accounts primarily so the system knows which account a transaction ultimately settles against, but this simulator already has a single, tested, pessimistic-locked balance holder (`Wallet`), and duplicating that logic for a second money-movement path here would compete with — not complement — Phase 7's actual transfer feature. Bank accounts exist as the realistic linked-account records recruiters would expect to see, and as a clean foundation a "top up from bank" feature could build on later without a schema change, but that wiring isn't built.
+
+### Why verification outcomes are injected, not called inline
+
+`BankAccountServiceImpl` depends on a `SimulatedOutcomeSource` interface rather than calling `ThreadLocalRandom` directly. The real implementation is genuinely random (~85% success, modeling that a bank's actual verification check isn't 100% either) — but unit tests inject a mock that forces both the success and failure branch deterministically, and `BankAccountControllerIntegrationTest` overrides the bean with `@MockitoBean` to force success, so "verify then set as primary" isn't a flaky end-to-end test. Small seam, but it's the difference between testing both branches on purpose and hoping the test run got lucky.
+
 ## Repository layout
 
 ```
@@ -43,16 +51,20 @@ upi-payment-gateway-simulator/
 ```
 backend/src/main/java/com/upisimulator/
 ├── config/         OpenApiConfig, JpaAuditingConfig, WebConfig (serves /uploads/**)
-├── controller/      HomeController, AuthController, ProfileController, WalletController
-├── dto/             ApiResponse<T>, ErrorResponse, auth DTOs, profile DTOs, wallet DTOs
-├── entity/          BaseEntity, User, Role, RefreshToken, Wallet, Transaction (+3 enums)
+├── controller/      HomeController, AuthController, ProfileController, WalletController,
+│                     BankAccountController
+├── dto/             ApiResponse<T>, ErrorResponse, auth/profile/wallet/bank-account DTOs
+├── entity/          BaseEntity, User, Role, RefreshToken, Wallet, Transaction (+3 enums),
+│                     BankAccount (+3 enums)
 ├── exception/       ApiException + 5 subtypes, GlobalExceptionHandler
 ├── mapper/          Still empty — see package-info for why
-├── repository/      UserRepository, RefreshTokenRepository, WalletRepository, TransactionRepository
+├── repository/      UserRepository, RefreshTokenRepository, WalletRepository,
+│                     TransactionRepository, BankAccountRepository
 ├── security/        JwtUtil, JwtProperties, SecurityConfig, JwtAuthenticationFilter,
 │                     UserDetailsServiceImpl, RestAuthenticationEntryPoint, RestAccessDeniedHandler
-├── service/         AuthService, ProfileService, FileStorageService, WalletService (+ impl/)
-└── util/            ApiPaths, UtrGenerator
+├── service/         AuthService, ProfileService, FileStorageService, WalletService,
+│                     BankAccountService, SimulatedOutcomeSource (+ impl/)
+└── util/            ApiPaths, UtrGenerator, MaskingUtil
 ```
 
 Packages with no classes yet still exist as `package-info.java` files, so the intended architecture is visible in the repo from Phase 1 onward rather than materializing folder-by-folder.
@@ -61,11 +73,12 @@ Packages with no classes yet still exist as `package-info.java` files, so the in
 
 ```
 frontend/src/
-├── components/    Header (auth-aware), ProtectedRoute, LedgerEntry, RoadmapList, TransactionRow
+├── components/    Header (auth-aware), ProtectedRoute, LedgerEntry, RoadmapList,
+│                   TransactionRow, BankAccountCard
 ├── context/       AuthContext — session state, restores from stored refresh token on load
-├── pages/         Home, Login, Register, Profile, Wallet, NotFound
-├── services/      api.js (axios instance + token interceptor + apiOrigin),
-│                   authService.js, profileService.js, walletService.js, healthService.js
+├── pages/         Home, Login, Register, Profile, Wallet, BankAccounts, NotFound
+├── services/      api.js (axios instance + token interceptor + apiOrigin), authService.js,
+│                   profileService.js, walletService.js, bankAccountService.js, healthService.js
 ├── App.jsx        Route definitions, wraps everything in AuthProvider
 ├── main.jsx       Entry point (wraps App in BrowserRouter)
 └── index.css      Tailwind v4 import + design tokens
@@ -147,6 +160,11 @@ Opens on `http://localhost:5173`. Copy `.env.example` to `.env` if your backend 
 | PUT | `/api/v1/wallet/freeze` | Bearer | Freeze your own wallet (blocks deposits; will block transfers from Phase 7) |
 | PUT | `/api/v1/wallet/unfreeze` | Bearer | Unfreeze your own wallet |
 | GET | `/api/v1/wallet/transactions` | Bearer | Paginated ledger (`?page=&size=&sort=`) — filters/search arrive Phase 10 |
+| POST | `/api/v1/bank-accounts` | Bearer | Link a new bank account (first one becomes primary automatically) |
+| GET | `/api/v1/bank-accounts` | Bearer | List linked accounts (masked account numbers) |
+| POST | `/api/v1/bank-accounts/{id}/verify` | Bearer | Simulate a verification check (~85% success, retryable on failure) |
+| PUT | `/api/v1/bank-accounts/{id}/primary` | Bearer | Set a verified account as primary |
+| DELETE | `/api/v1/bank-accounts/{id}` | Bearer | Remove a linked account (blocked if it's primary and others exist) |
 
 \* "Public" meaning no `Authorization` header is required — the refresh token in the request body is itself the credential for these two.
 
@@ -208,7 +226,23 @@ Everything else now requires `Authorization: Bearer <accessToken>`; an unauthent
 | description | VARCHAR | nullable |
 | created_at / updated_at | DATETIME | |
 
-Still on `ddl-auto=update` for now. With the core money-movement shape (`Wallet`/`Transaction`) now in place, Phase 5 is a reasonable point to actually switch to Flyway-managed migrations rather than keep deferring it.
+**`bank_accounts`** — many per user, hard-deleted (see decisions above for why this one isn't soft-deleted).
+
+| Column | Type | Notes |
+|---|---|---|
+| id | BIGINT, PK | |
+| user_id | BIGINT, FK → users.id | |
+| account_holder_name | VARCHAR | |
+| bank_name | VARCHAR | one of a curated set of major Indian banks (enum) |
+| account_number | VARCHAR | stored in full; every API response masks all but the last 4 digits |
+| ifsc_code | VARCHAR(11) | validated against the real IFSC format |
+| account_type | VARCHAR | `SAVINGS` or `CURRENT` |
+| primary | BOOLEAN | exactly one `true` per user, enforced in the service layer |
+| verification_status | VARCHAR | `PENDING`, `VERIFIED`, or `FAILED` |
+| verified_at | DATETIME | nullable |
+| created_at / updated_at | DATETIME | |
+
+Still on `ddl-auto=update`. Phase 4's README flagged Phase 5 as a reasonable point to switch to Flyway; revising that. Hand-writing migration SQL for five tables that has to exactly match what Hibernate already auto-generates, with no way to run `mvn` here to confirm it actually applies, is a real risk of shipping something broken — worse than staying on auto-DDL. This is a better one to do locally, where it's actually verifiable. Concrete trigger for when it stops being optional: the first time the schema needs a change `ddl-auto=update` can't do safely (a column rename, or tightening a nullable column to `NOT NULL` on existing data) — that's where auto-DDL goes from convenient to actively risky.
 
 ## Roadmap
 
@@ -216,7 +250,7 @@ Still on `ddl-auto=update` for now. With the core money-movement shape (`Wallet`
 - [x] **Phase 2** — Authentication (register, login, refresh with rotation, logout)
 - [x] **Phase 3** — User profile (edit, change password, picture upload, soft delete)
 - [x] **Phase 4** — Wallet (create, balance, simulated deposit, freeze, transaction ledger)
-- [ ] Phase 5 — Bank accounts
+- [x] **Phase 5** — Bank accounts (add, verify, primary account, delete)
 - [ ] Phase 6 — UPI IDs
 - [ ] Phase 7 — Money transfer
 - [ ] Phase 8 — QR payments
