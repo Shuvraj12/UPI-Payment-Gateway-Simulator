@@ -1,9 +1,9 @@
 const UPCOMING = [
-  { phase: '05', label: 'Bank accounts', detail: 'add, verify, primary account' },
   { phase: '06', label: 'UPI IDs', detail: 'create, set default' },
   { phase: '07', label: 'Transfers', detail: 'send, receive, status' },
   { phase: '08', label: 'QR payments', detail: 'generate, scan, pay' },
   { phase: '09', label: 'Money requests', detail: 'create, accept, reject' },
+  { phase: '10', label: 'Transaction history', detail: 'filters, search, export' },
   { phase: '11', label: 'Analytics', detail: 'spend trends, top recipients' },
   { phase: '12', label: 'Admin console', detail: 'users, freezes, statistics' },
 ]

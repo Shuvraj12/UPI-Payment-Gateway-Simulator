@@ -6,6 +6,7 @@ import Login from './pages/Login.jsx'
 import Register from './pages/Register.jsx'
 import Profile from './pages/Profile.jsx'
 import Wallet from './pages/Wallet.jsx'
+import BankAccounts from './pages/BankAccounts.jsx'
 import NotFound from './pages/NotFound.jsx'
 
 function App() {
@@ -28,6 +29,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Wallet />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/bank-accounts"
+          element={
+            <ProtectedRoute>
+              <BankAccounts />
             </ProtectedRoute>
           }
         />

@@ -15,6 +15,9 @@ export default function Header() {
           <Link to="/wallet" className="font-mono text-xs text-ink-text-dim hover:text-ink-text">
             Wallet
           </Link>
+          <Link to="/bank-accounts" className="font-mono text-xs text-ink-text-dim hidden sm:inline hover:text-ink-text">
+            Bank accounts
+          </Link>
           <Link to="/profile" className="font-mono text-xs text-ink-text-dim hidden sm:inline hover:text-ink-text">
             {user?.fullName}
           </Link>

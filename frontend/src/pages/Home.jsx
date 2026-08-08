@@ -12,7 +12,7 @@ export default function Home() {
 
       <main className="flex-1 px-6 py-14 sm:py-20">
         <div className="mx-auto max-w-xl">
-          <span className="font-mono text-xs text-stamp uppercase tracking-widest">Phase 04 / 14</span>
+          <span className="font-mono text-xs text-stamp uppercase tracking-widest">Phase 05 / 14</span>
 
           <h1 className="font-display text-3xl sm:text-4xl font-semibold leading-tight mt-2">
             {isAuthenticated
