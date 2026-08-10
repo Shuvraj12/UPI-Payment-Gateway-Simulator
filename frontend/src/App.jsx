@@ -7,6 +7,7 @@ import Register from './pages/Register.jsx'
 import Profile from './pages/Profile.jsx'
 import Wallet from './pages/Wallet.jsx'
 import BankAccounts from './pages/BankAccounts.jsx'
+import UpiIds from './pages/UpiIds.jsx'
 import NotFound from './pages/NotFound.jsx'
 
 function App() {
@@ -37,6 +38,14 @@ function App() {
           element={
             <ProtectedRoute>
               <BankAccounts />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/upi-ids"
+          element={
+            <ProtectedRoute>
+              <UpiIds />
             </ProtectedRoute>
           }
         />

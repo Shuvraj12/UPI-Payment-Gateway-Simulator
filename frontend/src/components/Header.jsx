@@ -18,6 +18,9 @@ export default function Header() {
           <Link to="/bank-accounts" className="font-mono text-xs text-ink-text-dim hidden sm:inline hover:text-ink-text">
             Bank accounts
           </Link>
+          <Link to="/upi-ids" className="font-mono text-xs text-ink-text-dim hidden sm:inline hover:text-ink-text">
+            UPI IDs
+          </Link>
           <Link to="/profile" className="font-mono text-xs text-ink-text-dim hidden sm:inline hover:text-ink-text">
             {user?.fullName}
           </Link>
