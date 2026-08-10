@@ -2,7 +2,7 @@
 
 A simulated UPI-style payments backend and frontend, built phase by phase as a portfolio project. Every transfer, wallet, and request is internal — this does not integrate with any real payment network.
 
-**Status:** Phase 5 of 14 complete.
+**Status:** Phase 6 of 14 complete.
 
 ## Tech stack
 
@@ -37,6 +37,10 @@ Phase 5 only manages linked-account *records* — add, verify, set primary, dele
 
 `BankAccountServiceImpl` depends on a `SimulatedOutcomeSource` interface rather than calling `ThreadLocalRandom` directly. The real implementation is genuinely random (~85% success, modeling that a bank's actual verification check isn't 100% either) — but unit tests inject a mock that forces both the success and failure branch deterministically, and `BankAccountControllerIntegrationTest` overrides the bean with `@MockitoBean` to force success, so "verify then set as primary" isn't a flaky end-to-end test. Small seam, but it's the difference between testing both branches on purpose and hoping the test run got lucky.
 
+### Why a UPI ID requires a wallet and a verified bank account
+
+`UpiId` resolves to a `Wallet`, not a `BankAccount` — consistent with the previous decision that `Wallet` is this simulator's actual balance holder. But creating one still checks that a verified bank account exists first, even though the UPI ID itself doesn't reference it afterward. That mirrors real UPI onboarding (a VPA has to represent a verified identity, not just an app account) and, more usefully here, it's what makes Phase 5 feel load-bearing rather than a side quest — you can't reach Phase 6 without having actually exercised Phase 5's verification flow first. Scope note: this phase deliberately stops at create/list/default/availability, matching the phase brief exactly — no delete, unlike bank accounts. Easy to add if wanted; leaving it out for now rather than expanding scope unprompted.
+
 ## Repository layout
 
 ```
@@ -52,18 +56,18 @@ upi-payment-gateway-simulator/
 backend/src/main/java/com/upisimulator/
 ├── config/         OpenApiConfig, JpaAuditingConfig, WebConfig (serves /uploads/**)
 ├── controller/      HomeController, AuthController, ProfileController, WalletController,
-│                     BankAccountController
-├── dto/             ApiResponse<T>, ErrorResponse, auth/profile/wallet/bank-account DTOs
+│                     BankAccountController, UpiIdController
+├── dto/             ApiResponse<T>, ErrorResponse, auth/profile/wallet/bank-account/upi-id DTOs
 ├── entity/          BaseEntity, User, Role, RefreshToken, Wallet, Transaction (+3 enums),
-│                     BankAccount (+3 enums)
+│                     BankAccount (+3 enums), UpiId
 ├── exception/       ApiException + 5 subtypes, GlobalExceptionHandler
 ├── mapper/          Still empty — see package-info for why
 ├── repository/      UserRepository, RefreshTokenRepository, WalletRepository,
-│                     TransactionRepository, BankAccountRepository
+│                     TransactionRepository, BankAccountRepository, UpiIdRepository
 ├── security/        JwtUtil, JwtProperties, SecurityConfig, JwtAuthenticationFilter,
 │                     UserDetailsServiceImpl, RestAuthenticationEntryPoint, RestAccessDeniedHandler
 ├── service/         AuthService, ProfileService, FileStorageService, WalletService,
-│                     BankAccountService, SimulatedOutcomeSource (+ impl/)
+│                     BankAccountService, SimulatedOutcomeSource, UpiIdService (+ impl/)
 └── util/            ApiPaths, UtrGenerator, MaskingUtil
 ```
 
@@ -76,9 +80,10 @@ frontend/src/
 ├── components/    Header (auth-aware), ProtectedRoute, LedgerEntry, RoadmapList,
 │                   TransactionRow, BankAccountCard
 ├── context/       AuthContext — session state, restores from stored refresh token on load
-├── pages/         Home, Login, Register, Profile, Wallet, BankAccounts, NotFound
+├── pages/         Home, Login, Register, Profile, Wallet, BankAccounts, UpiIds, NotFound
 ├── services/      api.js (axios instance + token interceptor + apiOrigin), authService.js,
-│                   profileService.js, walletService.js, bankAccountService.js, healthService.js
+│                   profileService.js, walletService.js, bankAccountService.js,
+│                   upiIdService.js, healthService.js
 ├── App.jsx        Route definitions, wraps everything in AuthProvider
 ├── main.jsx       Entry point (wraps App in BrowserRouter)
 └── index.css      Tailwind v4 import + design tokens
@@ -165,6 +170,10 @@ Opens on `http://localhost:5173`. Copy `.env.example` to `.env` if your backend 
 | POST | `/api/v1/bank-accounts/{id}/verify` | Bearer | Simulate a verification check (~85% success, retryable on failure) |
 | PUT | `/api/v1/bank-accounts/{id}/primary` | Bearer | Set a verified account as primary |
 | DELETE | `/api/v1/bank-accounts/{id}` | Bearer | Remove a linked account (blocked if it's primary and others exist) |
+| POST | `/api/v1/upi-ids` | Bearer | Create a UPI ID — requires an existing wallet and a verified bank account |
+| GET | `/api/v1/upi-ids` | Bearer | List your UPI IDs |
+| GET | `/api/v1/upi-ids/availability` | Bearer | Check whether a username is available (`?username=`), for live-typing checks |
+| PUT | `/api/v1/upi-ids/{id}/default` | Bearer | Set a UPI ID as the default |
 
 \* "Public" meaning no `Authorization` header is required — the refresh token in the request body is itself the credential for these two.
 
@@ -242,7 +251,18 @@ Everything else now requires `Authorization: Bearer <accessToken>`; an unauthent
 | verified_at | DATETIME | nullable |
 | created_at / updated_at | DATETIME | |
 
-Still on `ddl-auto=update`. Phase 4's README flagged Phase 5 as a reasonable point to switch to Flyway; revising that. Hand-writing migration SQL for five tables that has to exactly match what Hibernate already auto-generates, with no way to run `mvn` here to confirm it actually applies, is a real risk of shipping something broken — worse than staying on auto-DDL. This is a better one to do locally, where it's actually verifiable. Concrete trigger for when it stops being optional: the first time the schema needs a change `ddl-auto=update` can't do safely (a column rename, or tightening a nullable column to `NOT NULL` on existing data) — that's where auto-DDL goes from convenient to actively risky.
+**`upi_ids`** — many per user (capped at 3), resolves to a `wallet_id` directly rather than via `user_id` — see decisions above for why.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | BIGINT, PK | |
+| user_id | BIGINT, FK → users.id | |
+| wallet_id | BIGINT, FK → wallets.id | the fast-lookup path a transfer (Phase 7) will need |
+| vpa | VARCHAR, unique | full address, e.g. `priya123@upisim`, always lowercased |
+| primary | BOOLEAN | exactly one `true` per user, enforced in the service layer |
+| created_at / updated_at | DATETIME | |
+
+Still on `ddl-auto=update`. Phase 4's README flagged Phase 5 as a reasonable point to switch to Flyway; revising that. Hand-writing migration SQL for six tables that has to exactly match what Hibernate already auto-generates, with no way to run `mvn` here to confirm it actually applies, is a real risk of shipping something broken — worse than staying on auto-DDL. This is a better one to do locally, where it's actually verifiable. Concrete trigger for when it stops being optional: the first time the schema needs a change `ddl-auto=update` can't do safely (a column rename, or tightening a nullable column to `NOT NULL` on existing data) — that's where auto-DDL goes from convenient to actively risky.
 
 ## Roadmap
 
@@ -251,7 +271,7 @@ Still on `ddl-auto=update`. Phase 4's README flagged Phase 5 as a reasonable poi
 - [x] **Phase 3** — User profile (edit, change password, picture upload, soft delete)
 - [x] **Phase 4** — Wallet (create, balance, simulated deposit, freeze, transaction ledger)
 - [x] **Phase 5** — Bank accounts (add, verify, primary account, delete)
-- [ ] Phase 6 — UPI IDs
+- [x] **Phase 6** — UPI IDs (create, default, availability checking)
 - [ ] Phase 7 — Money transfer
 - [ ] Phase 8 — QR payments
 - [ ] Phase 9 — Money requests
