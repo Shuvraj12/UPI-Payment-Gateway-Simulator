@@ -2,6 +2,7 @@ package com.upisimulator.repository;
 
 import com.upisimulator.entity.BankAccount;
 import com.upisimulator.entity.BankName;
+import com.upisimulator.entity.VerificationStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -22,6 +23,8 @@ public interface BankAccountRepository extends JpaRepository<BankAccount, Long> 
     Optional<BankAccount> findByIdAndUserId(Long id, Long userId);
 
     boolean existsByUserIdAndBankNameAndAccountNumber(Long userId, BankName bankName, String accountNumber);
+
+    boolean existsByUserIdAndVerificationStatus(Long userId, VerificationStatus verificationStatus);
 
     Optional<BankAccount> findByUserIdAndPrimaryTrue(Long userId);
 
