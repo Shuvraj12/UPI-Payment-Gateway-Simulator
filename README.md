@@ -2,7 +2,7 @@
 
 A simulated UPI-style payments backend and frontend, built phase by phase as a portfolio project. Every transfer, wallet, and request is internal — this does not integrate with any real payment network.
 
-**Status:** Phase 6 of 14 complete.
+**Status:** Phase 7 of 14 complete.
 
 ## Tech stack
 
@@ -41,6 +41,18 @@ Phase 5 only manages linked-account *records* — add, verify, set primary, dele
 
 `UpiId` resolves to a `Wallet`, not a `BankAccount` — consistent with the previous decision that `Wallet` is this simulator's actual balance holder. But creating one still checks that a verified bank account exists first, even though the UPI ID itself doesn't reference it afterward. That mirrors real UPI onboarding (a VPA has to represent a verified identity, not just an app account) and, more usefully here, it's what makes Phase 5 feel load-bearing rather than a side quest — you can't reach Phase 6 without having actually exercised Phase 5's verification flow first. Scope note: this phase deliberately stops at create/list/default/availability, matching the phase brief exactly — no delete, unlike bank accounts. Easy to add if wanted; leaving it out for now rather than expanding scope unprompted.
 
+### Why transfers lock wallets by id, not by sender/recipient role
+
+This is the payoff of a note left in Phase 4: a transfer locks *two* wallets in the same transaction. Locking them in role order — sender first, then recipient — deadlocks the moment two people pay each other simultaneously: transaction A holds Alice's lock waiting for Bob's, transaction B holds Bob's lock waiting for Alice's, both wait forever. `TransferServiceImpl` locks whichever wallet has the *lower id* first, regardless of who's sending or receiving — both transactions contend for the same wallet first, and one just waits instead of deadlocking. `TransferConcurrencyIntegrationTest` fires 40 real concurrent transfers between two wallets (20 each way), and asserts total money is conserved and nothing times out. Worth running yourself — multi-threaded behavior is the hardest to verify by reading code alone.
+
+### Fixing a Phase 4 bug: `referenceNumber` couldn't actually be shared
+
+`Transaction`'s Javadoc said from Phase 4 that a transfer would produce two rows sharing a UTR — but the column was marked `unique = true`, which would have rejected the second row the moment a transfer actually tried to write it. Replaced with a composite `(reference_number, direction)` unique constraint: exactly one DEBIT and one CREDIT per UTR, which is the real invariant. Found while implementing the feature the constraint was written in anticipation of — worth knowing about since it means every Phase 4–6 deposit record that landed in the database will need a schema migration if `ddl-auto` doesn't handle it automatically during the first startup with this code.
+
+### Why idempotency keys are required, not optional
+
+Every transfer request carries a client-generated UUID `idempotencyKey`. On the first request with a given key, the transfer executes. On any later request with the *same* key, `TransactionRepository.findByIdempotencyKey` finds the already-completed row and returns its result without moving money again — so a network retry or double-submit can't double-charge. It's checked before any wallet is touched. A request that failed validation never persists a row, so retrying with the same key after a real failure (insufficient balance, frozen wallet) still processes normally. Defense in depth: the column also has a unique constraint, so even a race between two simultaneous requests with the same key falls through to the `DataIntegrityViolationException` handler added in Phase 4.
+
 ## Repository layout
 
 ```
@@ -56,18 +68,22 @@ upi-payment-gateway-simulator/
 backend/src/main/java/com/upisimulator/
 ├── config/         OpenApiConfig, JpaAuditingConfig, WebConfig (serves /uploads/**)
 ├── controller/      HomeController, AuthController, ProfileController, WalletController,
-│                     BankAccountController, UpiIdController
-├── dto/             ApiResponse<T>, ErrorResponse, auth/profile/wallet/bank-account/upi-id DTOs
-├── entity/          BaseEntity, User, Role, RefreshToken, Wallet, Transaction (+3 enums),
+│                     BankAccountController, UpiIdController, TransferController
+├── dto/             ApiResponse<T>, ErrorResponse, auth/profile/wallet/bank-account/
+│                     upi-id/transfer DTOs
+├── entity/          BaseEntity, User, Role, RefreshToken, Wallet, Transaction (+3 enums,
+│                     grown in Phase 7 with idempotencyKey + counterpartyVpa),
 │                     BankAccount (+3 enums), UpiId
 ├── exception/       ApiException + 5 subtypes, GlobalExceptionHandler
 ├── mapper/          Still empty — see package-info for why
-├── repository/      UserRepository, RefreshTokenRepository, WalletRepository,
-│                     TransactionRepository, BankAccountRepository, UpiIdRepository
+├── repository/      UserRepository, RefreshTokenRepository, WalletRepository (+ id-based
+│                     locking lookup), TransactionRepository (+ idempotency + daily-sum
+│                     queries), BankAccountRepository, UpiIdRepository
 ├── security/        JwtUtil, JwtProperties, SecurityConfig, JwtAuthenticationFilter,
 │                     UserDetailsServiceImpl, RestAuthenticationEntryPoint, RestAccessDeniedHandler
 ├── service/         AuthService, ProfileService, FileStorageService, WalletService,
-│                     BankAccountService, SimulatedOutcomeSource, UpiIdService (+ impl/)
+│                     BankAccountService, SimulatedOutcomeSource, UpiIdService,
+│                     TransferService (+ impl/)
 └── util/            ApiPaths, UtrGenerator, MaskingUtil
 ```
 
@@ -78,12 +94,12 @@ Packages with no classes yet still exist as `package-info.java` files, so the in
 ```
 frontend/src/
 ├── components/    Header (auth-aware), ProtectedRoute, LedgerEntry, RoadmapList,
-│                   TransactionRow, BankAccountCard
+│                   TransactionRow (shows "Sent to"/"Received from"), BankAccountCard
 ├── context/       AuthContext — session state, restores from stored refresh token on load
-├── pages/         Home, Login, Register, Profile, Wallet, BankAccounts, UpiIds, NotFound
-├── services/      api.js (axios instance + token interceptor + apiOrigin), authService.js,
-│                   profileService.js, walletService.js, bankAccountService.js,
-│                   upiIdService.js, healthService.js
+├── pages/         Home, Login, Register, Profile, Wallet, BankAccounts, UpiIds,
+│                   SendMoney, NotFound
+├── services/      api.js, authService.js, profileService.js, walletService.js,
+│                   bankAccountService.js, upiIdService.js, transferService.js, healthService.js
 ├── App.jsx        Route definitions, wraps everything in AuthProvider
 ├── main.jsx       Entry point (wraps App in BrowserRouter)
 └── index.css      Tailwind v4 import + design tokens
@@ -174,6 +190,8 @@ Opens on `http://localhost:5173`. Copy `.env.example` to `.env` if your backend 
 | GET | `/api/v1/upi-ids` | Bearer | List your UPI IDs |
 | GET | `/api/v1/upi-ids/availability` | Bearer | Check whether a username is available (`?username=`), for live-typing checks |
 | PUT | `/api/v1/upi-ids/{id}/default` | Bearer | Set a UPI ID as the default |
+| GET | `/api/v1/transfers/resolve` | Bearer | Look up the account name behind a UPI ID (`?vpa=`), to confirm before sending |
+| POST | `/api/v1/transfers` | Bearer | Send money to a UPI ID. Requires an `idempotencyKey` (UUID); capped at &#8377;1,00,000/transfer and &#8377;2,00,000/day |
 
 \* "Public" meaning no `Authorization` header is required — the refresh token in the request body is itself the credential for these two.
 
@@ -272,7 +290,8 @@ Still on `ddl-auto=update`. Phase 4's README flagged Phase 5 as a reasonable poi
 - [x] **Phase 4** — Wallet (create, balance, simulated deposit, freeze, transaction ledger)
 - [x] **Phase 5** — Bank accounts (add, verify, primary account, delete)
 - [x] **Phase 6** — UPI IDs (create, default, availability checking)
-- [ ] Phase 7 — Money transfer
+- [x] **Phase 7** — Money transfer (send, receive, idempotency, daily limits, deadlock-safe locking)
+- [ ] Phase 8 — QR payments
 - [ ] Phase 8 — QR payments
 - [ ] Phase 9 — Money requests
 - [ ] Phase 10 — Transaction history
