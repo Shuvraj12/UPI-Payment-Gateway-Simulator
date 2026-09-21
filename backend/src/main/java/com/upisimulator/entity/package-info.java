@@ -5,9 +5,10 @@
  * every entity here extends it. Phase 2 added {@link com.upisimulator.entity.User}
  * and {@link com.upisimulator.entity.RefreshToken}. Phase 4 added
  * {@link com.upisimulator.entity.Wallet} and {@link com.upisimulator.entity.Transaction}.
- * Phase 5 added {@link com.upisimulator.entity.BankAccount}. Phase 6 adds
- * {@link com.upisimulator.entity.UpiId}, which resolves to a
- * {@code Wallet} - see its Javadoc for why, not a {@code BankAccount}.
- * Still to come: {@code MoneyRequest} (Phase 9).
+ * Phase 5 added {@link com.upisimulator.entity.BankAccount}. Phase 6 added
+ * {@link com.upisimulator.entity.UpiId}. Phase 7 (Money Transfer) didn't add
+ * a new entity, but grew {@code Transaction} with {@code idempotencyKey}
+ * and {@code counterpartyVpa}, and fixed a Phase 4 constraint bug - see
+ * {@code Transaction}'s Javadoc. Still to come: {@code MoneyRequest} (Phase 9).
  */
 package com.upisimulator.entity;

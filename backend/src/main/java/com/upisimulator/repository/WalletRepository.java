@@ -24,4 +24,14 @@ public interface WalletRepository extends JpaRepository<Wallet, Long> {
     @Query("SELECT w FROM Wallet w WHERE w.user.id = :userId")
     Optional<Wallet> findByUserIdForUpdate(@Param("userId") Long userId);
 
+    /**
+     * Same lock, looked up by the wallet's own id instead of its owner's.
+     * A transfer needs to lock two specific wallets (sender + recipient) in
+     * a caller-chosen order - see {@code TransferServiceImpl} for why that
+     * order is by ascending wallet id, not by sender/recipient role.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT w FROM Wallet w WHERE w.id = :walletId")
+    Optional<Wallet> findByIdForUpdate(@Param("walletId") Long walletId);
+
 }

@@ -16,6 +16,7 @@ public record TransactionResponse(
         BigDecimal balanceAfter,
         TransactionStatus status,
         String description,
+        String counterpartyVpa,
         LocalDateTime createdAt
 ) {
 }

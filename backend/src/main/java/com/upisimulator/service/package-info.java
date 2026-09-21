@@ -6,12 +6,12 @@
  * {@link com.upisimulator.service.FileStorageService}. Phase 4 added
  * {@link com.upisimulator.service.WalletService}. Phase 5 added
  * {@link com.upisimulator.service.BankAccountService} and
- * {@link com.upisimulator.service.SimulatedOutcomeSource}. Phase 6 adds
- * {@link com.upisimulator.service.UpiIdService}, which is the first service
- * to depend on three others' repositories at once (wallet + bank account
- * existence checks) to enforce that a UPI ID can't be created without a
- * funded, verified identity behind it. Controllers depend on the interface,
- * never the implementation, so services stay swappable and mockable in
- * tests.
+ * {@link com.upisimulator.service.SimulatedOutcomeSource}. Phase 6 added
+ * {@link com.upisimulator.service.UpiIdService}. Phase 7 adds
+ * {@link com.upisimulator.service.TransferService} - the money-safety-critical
+ * one: idempotency-checked, locks two wallets in a role-independent order to
+ * avoid deadlocking against a simultaneous transfer going the other way (see
+ * {@code TransferServiceImpl}). Controllers depend on the interface, never
+ * the implementation, so services stay swappable and mockable in tests.
  */
 package com.upisimulator.service;

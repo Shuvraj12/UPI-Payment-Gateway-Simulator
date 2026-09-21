@@ -159,6 +159,7 @@ public class WalletServiceImpl implements WalletService {
                 transaction.getBalanceAfter(),
                 transaction.getStatus(),
                 transaction.getDescription(),
+                transaction.getCounterpartyVpa(),
                 transaction.getCreatedAt()
         );
     }
