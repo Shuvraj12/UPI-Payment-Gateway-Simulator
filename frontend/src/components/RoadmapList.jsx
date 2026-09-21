@@ -1,5 +1,4 @@
 const UPCOMING = [
-  { phase: '07', label: 'Transfers', detail: 'send, receive, status' },
   { phase: '08', label: 'QR payments', detail: 'generate, scan, pay' },
   { phase: '09', label: 'Money requests', detail: 'create, accept, reject' },
   { phase: '10', label: 'Transaction history', detail: 'filters, search, export' },

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import Header from '../components/Header.jsx'
 import TransactionRow from '../components/TransactionRow.jsx'
 import * as walletService from '../services/walletService.js'
@@ -156,14 +157,22 @@ export default function Wallet() {
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleFreezeToggle}
-                  disabled={freezeSubmitting}
-                  className="mt-4 font-mono text-xs text-paper-text-dim underline underline-offset-4 disabled:opacity-60"
-                >
-                  {freezeSubmitting ? 'Updating…' : wallet.frozen ? 'Unfreeze wallet' : 'Freeze wallet'}
-                </button>
+                <div className="flex items-center gap-4 mt-4">
+                  <Link
+                    to="/send"
+                    className="rounded-md bg-credit text-ink font-display text-xs font-semibold py-2 px-4"
+                  >
+                    Send money
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={handleFreezeToggle}
+                    disabled={freezeSubmitting}
+                    className="font-mono text-xs text-paper-text-dim underline underline-offset-4 disabled:opacity-60"
+                  >
+                    {freezeSubmitting ? 'Updating…' : wallet.frozen ? 'Unfreeze wallet' : 'Freeze wallet'}
+                  </button>
+                </div>
                 {freezeError && <p className="font-mono text-xs text-debit mt-2">{freezeError}</p>}
               </section>
 

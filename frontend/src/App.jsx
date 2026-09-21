@@ -8,6 +8,7 @@ import Profile from './pages/Profile.jsx'
 import Wallet from './pages/Wallet.jsx'
 import BankAccounts from './pages/BankAccounts.jsx'
 import UpiIds from './pages/UpiIds.jsx'
+import SendMoney from './pages/SendMoney.jsx'
 import NotFound from './pages/NotFound.jsx'
 
 function App() {
@@ -46,6 +47,14 @@ function App() {
           element={
             <ProtectedRoute>
               <UpiIds />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/send"
+          element={
+            <ProtectedRoute>
+              <SendMoney />
             </ProtectedRoute>
           }
         />
